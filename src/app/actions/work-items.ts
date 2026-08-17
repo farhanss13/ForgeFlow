@@ -614,3 +614,145 @@ export async function assignTaskToMilestone(
 
   return { error: null };
 }
+
+export async function reorderTasks(
+  taskId: string,
+  destStatus: string,
+  orderedDestTaskIds: string[],
+  orderedSourceTaskIds?: string[]
+): Promise<{ error: string | null }> {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
+    return { error: "Authentication required." };
+  }
+
+  // 1. Validate status enum
+  if (!["TODO", "IN_PROGRESS", "DONE"].includes(destStatus)) {
+    return { error: "Invalid destination status." };
+  }
+
+  try {
+    // 2. Fetch the target task and verify user owns it via project ownership
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        project: {
+          select: { ownerId: true },
+        },
+      },
+    });
+
+    if (!task || task.project.ownerId !== user.id) {
+      return { error: "Task not found or access denied." };
+    }
+
+    const projectId = task.projectId;
+    const sourceStatus = task.status;
+
+    // 3. Double check same column or cross-column movement
+    const isSameColumn = sourceStatus === destStatus;
+
+    if (isSameColumn) {
+      // Validate all IDs belong to the same project
+      const count = await prisma.task.count({
+        where: {
+          id: { in: orderedDestTaskIds },
+          projectId,
+        },
+      });
+
+      if (count !== orderedDestTaskIds.length) {
+        return { error: "Invalid task IDs supplied." };
+      }
+
+      // Reorder destination column positions
+      const updates = orderedDestTaskIds.map((id, index) =>
+        prisma.task.update({
+          where: { id },
+          data: { position: index },
+        })
+      );
+
+      await prisma.$transaction(updates);
+    } else {
+      // Cross-column move: normalize positions of both source and destination columns
+      const allIds = [...orderedDestTaskIds, ...(orderedSourceTaskIds || [])];
+      
+      const count = await prisma.task.count({
+        where: {
+          id: { in: allIds },
+          projectId,
+        },
+      });
+
+      if (count !== allIds.length) {
+        return { error: "Invalid task IDs supplied." };
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updates: any[] = [];
+
+      // Update positions in destination column (which includes the target task) and set its status to destStatus
+      orderedDestTaskIds.forEach((id, index) => {
+        if (id === taskId) {
+          updates.push(
+            prisma.task.update({
+              where: { id },
+              data: {
+                status: destStatus,
+                position: index,
+              },
+            })
+          );
+        } else {
+          updates.push(
+            prisma.task.update({
+              where: { id },
+              data: {
+                position: index,
+              },
+            })
+          );
+        }
+      });
+
+      // Update positions in source column (which excludes the target task)
+      if (orderedSourceTaskIds && orderedSourceTaskIds.length > 0) {
+        orderedSourceTaskIds.forEach((id, index) => {
+          updates.push(
+            prisma.task.update({
+              where: { id },
+              data: {
+                position: index,
+              },
+            })
+          );
+        });
+      }
+
+      await prisma.$transaction(updates);
+    }
+
+    // Log Activity
+    await prisma.activityRecord.create({
+      data: {
+        projectId,
+        action: "REORDER_TASKS",
+        details: isSameColumn 
+          ? `Reordered tasks in ${destStatus}` 
+          : `Moved task "${task.title}" to ${destStatus}`,
+        userId: user.id,
+      },
+    });
+
+    revalidatePath(`/projects/${projectId}`);
+  } catch (error) {
+    console.error("Failed to reorder tasks:", error);
+    return { error: "An unexpected database error occurred." };
+  }
+
+  return { error: null };
+}
+

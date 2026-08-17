@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X, Search, ChevronDown, Edit2, Trash2, AlertCircle, Tag, CheckSquare, Clock } from "lucide-react";
-import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskPriority, assignTaskToMilestone } from "@/app/actions/work-items";
+import { Plus, X, Search, ChevronDown, Edit2, Trash2, Tag, CheckSquare, Clock, AlertCircle } from "lucide-react";
+import { createTask, updateTask, deleteTask, updateTaskPriority, assignTaskToMilestone, reorderTasks } from "@/app/actions/work-items";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -36,10 +36,25 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
   const [editingTask, setEditingTask] = React.useState<Task | null>(null);
   const [deletingTask, setDeletingTask] = React.useState<Task | null>(null);
 
+  // Optimistic Tasks State
+  const [localTasks, setLocalTasks] = React.useState<Task[]>(tasks);
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+
+  // Sync state with server props
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLocalTasks(tasks);
+  }, [tasks]);
+
   // Filters State
   const [search, setSearch] = React.useState("");
   const [selectedMilestone, setSelectedMilestone] = React.useState<string>("ALL");
   const [selectedPriority, setSelectedPriority] = React.useState<string>("ALL");
+
+  // Drag and Drop Local Trackers
+  const [draggedTaskId, setDraggedTaskId] = React.useState<string | null>(null);
+  const [draggedOverTaskId, setDraggedOverTaskId] = React.useState<string | null>(null);
+  const [isDraggingOverColumn, setIsDraggingOverColumn] = React.useState<string | null>(null);
 
   const [createState, createAction, isCreatePending] = React.useActionState(
     async (
@@ -77,11 +92,190 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
     }
   }, [editState]);
 
+  // Helper to handle status update
+  const handleStatusChange = async (taskId: string, status: string) => {
+    setErrorMsg(null);
+    const taskToMove = localTasks.find((t) => t.id === taskId);
+    if (!taskToMove) return;
+
+    // Fetch new order within destination column
+    const destTasks = localTasks.filter((t) => t.status === status && t.id !== taskId);
+    const orderedDestTaskIds = [...destTasks.map((t) => t.id), taskId];
+    const sourceTasks = localTasks.filter((t) => t.status === taskToMove.status && t.id !== taskId);
+    const orderedSourceTaskIds = sourceTasks.map((t) => t.id);
+
+    // Save previous state for rollback
+    const prevTasks = [...localTasks];
+
+    // Optimistically update status
+    setLocalTasks(
+      localTasks.map((t) => (t.id === taskId ? { ...t, status } : t))
+    );
+
+    const res = await reorderTasks(taskId, status, orderedDestTaskIds, orderedSourceTaskIds);
+    if (res && res.error) {
+      setErrorMsg(res.error);
+      setLocalTasks(prevTasks);
+    }
+  };
+
+  // Helper to handle priority update
+  const handlePriorityChange = async (taskId: string, priority: string) => {
+    setErrorMsg(null);
+    const res = await updateTaskPriority(taskId, priority);
+    if (res && res.error) {
+      setErrorMsg(res.error);
+    }
+  };
+
+  // Helper to handle milestone assignment
+  const handleMilestoneAssignment = async (taskId: string, milestoneId: string | null) => {
+    setErrorMsg(null);
+    const res = await assignTaskToMilestone(taskId, milestoneId);
+    if (res && res.error) {
+      setErrorMsg(res.error);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingTask) return;
+    setErrorMsg(null);
+    const res = await deleteTask(deletingTask.id);
+    if (res && res.error) {
+      setErrorMsg(res.error);
+    } else {
+      setDeletingTask(null);
+    }
+  };
+
+  // Drag Handlers
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOverColumn = (e: React.DragEvent, columnStatus: string) => {
+    e.preventDefault();
+    setIsDraggingOverColumn(columnStatus);
+  };
+
+  const handleDragOverCard = (e: React.DragEvent, cardId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (cardId !== draggedTaskId) {
+      setDraggedOverTaskId(cardId);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTaskId(null);
+    setDraggedOverTaskId(null);
+    setIsDraggingOverColumn(null);
+  };
+
+  const handleDropColumn = async (e: React.DragEvent, columnStatus: string) => {
+    e.preventDefault();
+    if (!draggedTaskId) return;
+
+    const taskToMove = localTasks.find((t) => t.id === draggedTaskId);
+    if (!taskToMove) return;
+
+    const sourceStatus = taskToMove.status;
+    const isSameCol = sourceStatus === columnStatus;
+
+    // Filter list inside columns
+    const sourceTasks = localTasks.filter((t) => t.status === sourceStatus && t.id !== draggedTaskId);
+    const destTasks = localTasks.filter((t) => t.status === columnStatus && t.id !== draggedTaskId);
+
+    let orderedDestIds: string[] = [];
+    const orderedSourceIds: string[] = sourceTasks.map((t) => t.id);
+
+    // If dropped on a specific card, insert it there. Otherwise, append to the end.
+    if (draggedOverTaskId) {
+      const insertIndex = destTasks.findIndex((t) => t.id === draggedOverTaskId);
+      const updatedDest = [...destTasks];
+      updatedDest.splice(insertIndex, 0, taskToMove);
+      orderedDestIds = updatedDest.map((t) => t.id);
+    } else {
+      orderedDestIds = [...destTasks.map((t) => t.id), draggedTaskId];
+    }
+
+    // Save previous state for rollback
+    const prevTasks = [...localTasks];
+
+    // Optimistic Update
+    const updatedTasks = localTasks.map((t) => {
+      if (t.id === draggedTaskId) {
+        return { ...t, status: columnStatus };
+      }
+      return t;
+    });
+    setLocalTasks(updatedTasks);
+
+    setErrorMsg(null);
+    const res = await reorderTasks(draggedTaskId, columnStatus, orderedDestIds, isSameCol ? undefined : orderedSourceIds);
+    if (res && res.error) {
+      setErrorMsg(res.error);
+      setLocalTasks(prevTasks);
+    }
+
+    handleDragEnd();
+  };
+
+  // Filter local tasks in memory for search & headers
+  const filteredTasks = localTasks.filter((task) => {
+    const matchesSearch = task.title.toLowerCase().includes(search.toLowerCase()) || 
+      (task.description && task.description.toLowerCase().includes(search.toLowerCase()));
+    const matchesMilestone = selectedMilestone === "ALL" || 
+      (selectedMilestone === "NONE" && !task.milestoneId) || 
+      task.milestoneId === selectedMilestone;
+    const matchesPriority = selectedPriority === "ALL" || task.priority === selectedPriority;
+
+    return matchesSearch && matchesMilestone && matchesPriority;
+  });
+
+  const todoTasks = filteredTasks.filter((t) => t.status === "TODO");
+  const inProgressTasks = filteredTasks.filter((t) => t.status === "IN_PROGRESS");
+  const doneTasks = filteredTasks.filter((t) => t.status === "DONE");
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "HIGH":
+        return "bg-destructive/10 text-destructive border-destructive/20";
+      case "MEDIUM":
+        return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
+      case "LOW":
+      default:
+        return "bg-muted text-muted-foreground border-border";
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "DONE":
+        return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20";
+      case "IN_PROGRESS":
+        return "bg-primary/10 text-primary border-primary/20";
+      case "TODO":
+      default:
+        return "bg-muted text-muted-foreground border-border";
+    }
+  };
+
   const renderTaskCard = (task: Task) => {
+    const isDragged = task.id === draggedTaskId;
+    const isOver = task.id === draggedOverTaskId;
+
     return (
       <div
         key={task.id}
-        className="p-4 bg-card/30 border border-border/60 rounded-xl space-y-3 shadow-sm hover:border-primary/30 transition-colors"
+        draggable
+        onDragStart={(e) => handleDragStart(e, task.id)}
+        onDragEnd={handleDragEnd}
+        onDragOver={(e) => handleDragOverCard(e, task.id)}
+        className={`p-4 bg-card/30 border border-border/60 rounded-xl space-y-3 shadow-sm hover:border-primary/30 transition-all cursor-grab active:cursor-grabbing ${
+          isDragged ? "opacity-40 border-dashed border-primary" : ""
+        } ${isOver ? "border-primary/80 ring-2 ring-primary/20 scale-[1.01]" : ""}`}
       >
         <div className="flex items-start justify-between gap-3">
           <h4 className="font-semibold text-sm text-foreground leading-tight">{task.title}</h4>
@@ -92,7 +286,7 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Status
+                Status (Accessible Move)
               </div>
               <DropdownMenuItem onClick={() => handleStatusChange(task.id, "TODO")}>To Do</DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleStatusChange(task.id, "IN_PROGRESS")}>In Progress</DropdownMenuItem>
@@ -151,81 +345,24 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
     );
   };
 
-  // Handle status update
-  const handleStatusChange = async (taskId: string, status: string) => {
-    await updateTaskStatus(taskId, status);
-  };
-
-  // Handle priority update
-  const handlePriorityChange = async (taskId: string, priority: string) => {
-    await updateTaskPriority(taskId, priority);
-  };
-
-  // Handle milestone assignment
-  const handleMilestoneAssignment = async (taskId: string, milestoneId: string | null) => {
-    await assignTaskToMilestone(taskId, milestoneId);
-  };
-
-  const handleDelete = async () => {
-    if (!deletingTask) return;
-    const res = await deleteTask(deletingTask.id);
-    if (!res?.error) {
-      setDeletingTask(null);
-    }
-  };
-
-  // Filter tasks in memory
-  const filteredTasks = tasks.filter((task) => {
-    const matchesSearch = task.title.toLowerCase().includes(search.toLowerCase()) || 
-      (task.description && task.description.toLowerCase().includes(search.toLowerCase()));
-    const matchesMilestone = selectedMilestone === "ALL" || 
-      (selectedMilestone === "NONE" && !task.milestoneId) || 
-      task.milestoneId === selectedMilestone;
-    const matchesPriority = selectedPriority === "ALL" || task.priority === selectedPriority;
-
-    return matchesSearch && matchesMilestone && matchesPriority;
-  });
-
-  const todoTasks = filteredTasks.filter((t) => t.status === "TODO");
-  const inProgressTasks = filteredTasks.filter((t) => t.status === "IN_PROGRESS");
-  const doneTasks = filteredTasks.filter((t) => t.status === "DONE");
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "HIGH":
-        return "bg-destructive/10 text-destructive border-destructive/20";
-      case "MEDIUM":
-        return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
-      case "LOW":
-      default:
-        return "bg-muted text-muted-foreground border-border";
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "DONE":
-        return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20";
-      case "IN_PROGRESS":
-        return "bg-primary/10 text-primary border-primary/20";
-      case "TODO":
-      default:
-        return "bg-muted text-muted-foreground border-border";
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Header and Add Task */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Tasks</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Manage details, statuses, and assign milestones.</p>
+          <h2 className="text-xl font-bold text-foreground">Kanban Board</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Drag tasks across columns or within a list to reorder.</p>
         </div>
         <Button onClick={() => setIsCreateOpen(true)} className="flex items-center gap-1 self-start sm:self-center">
           <Plus className="h-4 w-4" /> Add Task
         </Button>
       </div>
+
+      {errorMsg && (
+        <div className="p-3 text-xs bg-destructive/10 border border-destructive/20 text-destructive rounded-lg font-medium flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" /> {errorMsg}
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="flex flex-col md:flex-row gap-4 p-4 bg-muted/20 border border-border/40 rounded-xl">
@@ -276,9 +413,15 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
       </div>
 
       {/* Task List Grid grouped by Status */}
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-3 overflow-x-auto pb-4">
         {/* TODO COLUMN */}
-        <div className="space-y-4">
+        <div
+          onDragOver={(e) => handleDragOverColumn(e, "TODO")}
+          onDrop={(e) => handleDropColumn(e, "TODO")}
+          className={`space-y-4 p-4 rounded-xl border border-dashed transition-colors min-h-[400px] ${
+            isDraggingOverColumn === "TODO" ? "bg-primary/5 border-primary/50" : "border-border/40 bg-muted/10"
+          }`}
+        >
           <div className="flex items-center justify-between pb-2 border-b border-border/50">
             <span className="font-bold text-sm text-foreground flex items-center gap-1.5">
               <Clock className="h-4 w-4 text-muted-foreground" /> To Do ({todoTasks.length})
@@ -286,15 +429,21 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
           </div>
           <div className="space-y-3">
             {todoTasks.length === 0 ? (
-              <p className="text-xs text-muted-foreground/60 py-4 text-center">No tasks to do.</p>
+              <p className="text-xs text-muted-foreground/60 py-8 text-center select-none">No tasks here yet.</p>
             ) : (
-              todoTasks.map((t) => renderTaskCard(t))
+              todoTasks.map(renderTaskCard)
             )}
           </div>
         </div>
 
         {/* IN_PROGRESS COLUMN */}
-        <div className="space-y-4">
+        <div
+          onDragOver={(e) => handleDragOverColumn(e, "IN_PROGRESS")}
+          onDrop={(e) => handleDropColumn(e, "IN_PROGRESS")}
+          className={`space-y-4 p-4 rounded-xl border border-dashed transition-colors min-h-[400px] ${
+            isDraggingOverColumn === "IN_PROGRESS" ? "bg-primary/5 border-primary/50" : "border-border/40 bg-muted/10"
+          }`}
+        >
           <div className="flex items-center justify-between pb-2 border-b border-border/50">
             <span className="font-bold text-sm text-foreground flex items-center gap-1.5">
               <Clock className="h-4 w-4 text-primary" /> In Progress ({inProgressTasks.length})
@@ -302,15 +451,21 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
           </div>
           <div className="space-y-3">
             {inProgressTasks.length === 0 ? (
-              <p className="text-xs text-muted-foreground/60 py-4 text-center">No tasks in progress.</p>
+              <p className="text-xs text-muted-foreground/60 py-8 text-center select-none">No tasks here yet.</p>
             ) : (
-              inProgressTasks.map((t) => renderTaskCard(t))
+              inProgressTasks.map(renderTaskCard)
             )}
           </div>
         </div>
 
         {/* DONE COLUMN */}
-        <div className="space-y-4">
+        <div
+          onDragOver={(e) => handleDragOverColumn(e, "DONE")}
+          onDrop={(e) => handleDropColumn(e, "DONE")}
+          className={`space-y-4 p-4 rounded-xl border border-dashed transition-colors min-h-[400px] ${
+            isDraggingOverColumn === "DONE" ? "bg-primary/5 border-primary/50" : "border-border/40 bg-muted/10"
+          }`}
+        >
           <div className="flex items-center justify-between pb-2 border-b border-border/50">
             <span className="font-bold text-sm text-foreground flex items-center gap-1.5">
               <CheckSquare className="h-4 w-4 text-green-500" /> Done ({doneTasks.length})
@@ -318,15 +473,13 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
           </div>
           <div className="space-y-3">
             {doneTasks.length === 0 ? (
-              <p className="text-xs text-muted-foreground/60 py-4 text-center">No completed tasks.</p>
+              <p className="text-xs text-muted-foreground/60 py-8 text-center select-none">No tasks here yet.</p>
             ) : (
-              doneTasks.map((t) => renderTaskCard(t))
+              doneTasks.map(renderTaskCard)
             )}
           </div>
         </div>
       </div>
-
-
 
       {/* Create Modal */}
       {isCreateOpen && (
