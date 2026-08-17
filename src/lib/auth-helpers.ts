@@ -1,11 +1,12 @@
+import { cache } from "react";
 import { createClient } from "@/utils/supabase/server";
 import prisma from "./prisma";
 
 /**
  * Gets the current authenticated user from the validated server-side session.
- * Never trust user-supplied IDs from the client.
+ * Memoized using React cache to prevent duplicate network calls.
  */
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -16,7 +17,7 @@ export async function getCurrentUser() {
     return null;
   }
   return user;
-}
+});
 
 /**
  * Asserts that the current user is authenticated. Throws an error if not.
@@ -48,24 +49,23 @@ export async function verifyProjectOwnership(projectId: string) {
 
 /**
  * Gets the current profile matching the authenticated user.
+ * Memoized using React cache to prevent duplicate database lookups.
  */
-export async function getCurrentProfile() {
+export const getCurrentProfile = cache(async () => {
   const user = await getCurrentUser();
   if (!user) return null;
 
   return await prisma.profile.findUnique({
     where: { id: user.id },
   });
-}
+});
 
 /**
  * Asserts the current user has a profile, returning it.
+ * Leverages the memoized profile fetcher.
  */
 export async function requireProfile() {
-  const user = await requireUser();
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-  });
+  const profile = await getCurrentProfile();
   if (!profile) {
     throw new Error("Profile not found.");
   }
