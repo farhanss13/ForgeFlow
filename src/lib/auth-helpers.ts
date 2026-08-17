@@ -1,0 +1,47 @@
+import { createClient } from "@/utils/supabase/server";
+import prisma from "./prisma";
+
+/**
+ * Gets the current authenticated user from the validated server-side session.
+ * Never trust user-supplied IDs from the client.
+ */
+export async function getCurrentUser() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return null;
+  }
+  return user;
+}
+
+/**
+ * Asserts that the current user is authenticated. Throws an error if not.
+ */
+export async function requireUser() {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error("Unauthorized: Authentication required.");
+  }
+  return user;
+}
+
+/**
+ * Verifies that the current user owns a specific project.
+ * Uses explicit ownership filtering for security.
+ */
+export async function verifyProjectOwnership(projectId: string) {
+  const user = await requireUser();
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { ownerId: true },
+  });
+
+  if (!project || project.ownerId !== user.id) {
+    throw new Error("Access Denied: You do not own this project.");
+  }
+  return true;
+}
