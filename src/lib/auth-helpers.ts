@@ -45,3 +45,29 @@ export async function verifyProjectOwnership(projectId: string) {
   }
   return true;
 }
+
+/**
+ * Gets the current profile matching the authenticated user.
+ */
+export async function getCurrentProfile() {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  return await prisma.profile.findUnique({
+    where: { id: user.id },
+  });
+}
+
+/**
+ * Asserts the current user has a profile, returning it.
+ */
+export async function requireProfile() {
+  const user = await requireUser();
+  const profile = await prisma.profile.findUnique({
+    where: { id: user.id },
+  });
+  if (!profile) {
+    throw new Error("Profile not found.");
+  }
+  return profile;
+}
