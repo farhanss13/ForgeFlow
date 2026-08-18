@@ -10,13 +10,14 @@ generator client {
 
 // User Profile model (linked to Supabase Auth)
 model Profile {
-  id              String           @id @default(uuid()) @db.Uuid
-  email           String           @unique
+  id              String            @id @default(uuid()) @db.Uuid
+  email           String            @unique
   fullName        String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
   projects        Project[]
   activityRecords ActivityRecord[]
+  githubConnection GitHubConnection?
 }
 
 // Project container model
@@ -96,4 +97,18 @@ model ActivityRecord {
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt(sort: Desc)])
+}
+
+// GitHub OAuth Connection model
+model GitHubConnection {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @db.Uuid
+  profile        Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  githubUserId   String   @unique
+  githubUsername String
+  accessToken    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
 }
