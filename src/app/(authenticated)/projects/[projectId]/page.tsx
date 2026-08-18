@@ -7,6 +7,7 @@ import { ProjectDetailHeader } from "@/components/projects/project-detail-header
 import { MilestoneTab } from "@/components/projects/milestone-tab";
 import { TaskTab } from "@/components/projects/task-tab";
 import { AiPlannerTab } from "@/components/projects/ai-planner-tab";
+import { GithubRepoCard } from "@/components/projects/github-repo-card";
 
 interface PageProps {
   params: Promise<{ projectId: string }>;
@@ -25,6 +26,17 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       ownerId: profile.id,
     },
     include: {
+      githubRepository: {
+        select: {
+          id: true,
+          name: true,
+          fullName: true,
+          ownerLogin: true,
+          htmlUrl: true,
+          description: true,
+          defaultBranch: true,
+        },
+      },
       milestones: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -178,6 +190,9 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
                 Welcome to your project workspace. Use the tabs above to manage project goals (Milestones) and track lists of requirements (Tasks). Deleting milestones will safely detach tasks, keeping your progress reports intact.
               </p>
             </div>
+
+            {/* GitHub Repository Card */}
+            <GithubRepoCard projectId={projectId} connectedRepo={project.githubRepository} />
           </div>
         )}
 

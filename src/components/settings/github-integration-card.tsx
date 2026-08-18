@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { Link2, Link2Off, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { disconnectGithub } from "@/app/actions/integration-actions";

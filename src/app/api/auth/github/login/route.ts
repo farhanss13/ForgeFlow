@@ -40,7 +40,7 @@ export async function GET() {
     const callbackUrl = process.env.GITHUB_CALLBACK_URL || "http://localhost:3000/api/auth/github/callback";
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       callbackUrl
-    )}&state=${state}&scope=read:user`;
+    )}&state=${state}&scope=read:user%20public_repo`;
 
     return NextResponse.redirect(githubAuthUrl);
   } catch (error) {

@@ -22,17 +22,18 @@ model Profile {
 
 // Project container model
 model Project {
-  id              String           @id @default(uuid()) @db.Uuid
-  name            String
-  description     String?
-  ownerId         String           @db.Uuid
-  owner           Profile          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  milestones      Milestone[]
-  tasks           Task[]
-  documents       Document[]
-  activityRecords ActivityRecord[]
+  id               String            @id @default(uuid()) @db.Uuid
+  name             String
+  description      String?
+  ownerId          String            @db.Uuid
+  owner            Profile           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  milestones       Milestone[]
+  tasks            Task[]
+  documents        Document[]
+  activityRecords  ActivityRecord[]
+  githubRepository GitHubRepository?
 
   @@index([ownerId])
 }
@@ -111,4 +112,22 @@ model GitHubConnection {
   updatedAt      DateTime @updatedAt
 
   @@index([userId])
+}
+
+// GitHub Repository Link model
+model GitHubRepository {
+  id                 String   @id @default(uuid()) @db.Uuid
+  projectId          String   @unique @db.Uuid
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  githubRepositoryId String
+  name               String
+  fullName           String
+  ownerLogin         String
+  htmlUrl            String
+  description        String?
+  defaultBranch      String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([projectId])
 }
