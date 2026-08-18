@@ -23,7 +23,7 @@ export async function generateProjectPlan(requirements: string): Promise<Generat
     throw new Error("GEMINI_API_KEY is not configured in the server environment variables.");
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
   const schema = {
     type: "OBJECT",
