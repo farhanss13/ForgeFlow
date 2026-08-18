@@ -6,6 +6,7 @@ import { requireProfile } from "@/lib/auth-helpers";
 import { ProjectDetailHeader } from "@/components/projects/project-detail-header";
 import { MilestoneTab } from "@/components/projects/milestone-tab";
 import { TaskTab } from "@/components/projects/task-tab";
+import { AiPlannerTab } from "@/components/projects/ai-planner-tab";
 
 interface PageProps {
   params: Promise<{ projectId: string }>;
@@ -108,6 +109,17 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             Tasks ({project._count.tasks})
           </Link>
           <Link
+            href={`/projects/${projectId}?tab=ai-planner`}
+            replace
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+              tab === "ai-planner"
+                ? "border-primary text-foreground font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            AI Planner
+          </Link>
+          <Link
             href={`/projects/${projectId}/documents`}
             className="py-4 px-1 border-b-2 border-transparent font-medium text-sm text-muted-foreground hover:text-foreground transition-all"
           >
@@ -179,6 +191,10 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             tasks={project.tasks} 
             milestones={project.milestones.map(m => ({ id: m.id, title: m.title }))} 
           />
+        )}
+
+        {tab === "ai-planner" && (
+          <AiPlannerTab projectId={projectId} />
         )}
       </div>
     </div>
