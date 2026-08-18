@@ -96,13 +96,17 @@ export function Navbar() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button variant="ghost" size="sm">
-            Sign In
-          </Button>
-          <Button size="sm" className="gap-1">
-            Get Started
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+          <Link href="/login">
+            <Button variant="ghost" size="sm">
+              Sign In
+            </Button>
+          </Link>
+          <Link href="/signup">
+            <Button size="sm" className="gap-1 cursor-pointer">
+              Get Started
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
         </div>
 
         {/* Mobile Nav Button */}
@@ -173,13 +177,17 @@ export function Navbar() {
           </nav>
           <div className="h-px bg-border my-1" />
           <div className="flex flex-col gap-2">
-            <Button variant="outline" className="w-full">
-              Sign In
-            </Button>
-            <Button className="w-full gap-1">
-              Get Started
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+            <Link href="/login" className="w-full">
+              <Button variant="outline" className="w-full cursor-pointer">
+                Sign In
+              </Button>
+            </Link>
+            <Link href="/signup" className="w-full">
+              <Button className="w-full gap-1 cursor-pointer">
+                Get Started
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
           </div>
         </div>
       )}

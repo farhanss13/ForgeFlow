@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { ArrowRight, Sparkles, Terminal } from "lucide-react";
 
 export function Hero() {
@@ -30,10 +31,12 @@ export function Hero() {
 
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-          <Button size="lg" className="w-full sm:w-auto gap-2 text-base">
-            Get Started
-            <ArrowRight className="h-5 w-5" />
-          </Button>
+          <Link href="/signup" className="w-full sm:w-auto">
+            <Button size="lg" className="w-full sm:w-auto gap-2 text-base cursor-pointer">
+              Get Started
+              <ArrowRight className="h-5 w-5" />
+            </Button>
+          </Link>
           <a
             href="#features"
             className="inline-flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted text-foreground h-9 gap-1.5 px-4 text-base font-medium transition-colors w-full sm:w-auto"
