@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X, Search, ChevronDown, Edit2, Trash2, Tag, CheckSquare, Clock, AlertCircle } from "lucide-react";
+import { Plus, X, Search, ChevronDown, Edit2, Trash2, Tag, CheckSquare, Clock, AlertCircle, Sparkles, Brain, CheckCircle, AlertTriangle, ChevronRight, RefreshCw } from "lucide-react";
 import { createTask, updateTask, deleteTask, updateTaskPriority, assignTaskToMilestone, reorderTasks } from "@/app/actions/work-items";
+import { generateTaskSuggestions, applyTaskDescription, applyAcceptanceCriteria, addSuggestedSubtasks } from "@/app/actions/assistant-actions";
+import { type TaskSuggestion } from "@/lib/ai/client";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +37,130 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [editingTask, setEditingTask] = React.useState<Task | null>(null);
   const [deletingTask, setDeletingTask] = React.useState<Task | null>(null);
+
+  // AI Task Assistant State
+  const [aiSuggestions, setAiSuggestions] = React.useState<TaskSuggestion | null>(null);
+  const [isAiLoading, setIsAiLoading] = React.useState(false);
+  const [aiError, setAiError] = React.useState<string | null>(null);
+  const [aiSuccess, setAiSuccess] = React.useState<string | null>(null);
+  const [isApplying, setIsApplying] = React.useState(false);
+
+  // Reset AI states when selected task changes
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAiSuggestions(null);
+    setAiError(null);
+    setAiSuccess(null);
+    setIsAiLoading(false);
+  }, [editingTask?.id]);
+
+  const handleAiAnalyze = async () => {
+    if (!editingTask || isAiLoading) return;
+    setIsAiLoading(true);
+    setAiError(null);
+    setAiSuccess(null);
+    setAiSuggestions(null);
+
+    const res = await generateTaskSuggestions(editingTask.id);
+    if (res.error) {
+      setAiError(res.error);
+    } else if (res.suggestions) {
+      setAiSuggestions(res.suggestions);
+    }
+    setIsAiLoading(false);
+  };
+
+  const handleApplyDescription = async () => {
+    if (!editingTask || !aiSuggestions || isApplying) return;
+    setIsApplying(true);
+    setAiError(null);
+    setAiSuccess(null);
+
+    const res = await applyTaskDescription(editingTask.id, aiSuggestions.improvedDescription);
+    if (res.error) {
+      setAiError(res.error);
+    } else if (res.success) {
+      setAiSuccess("AI task description applied successfully!");
+      setEditingTask({ ...editingTask, description: aiSuggestions.improvedDescription });
+    }
+    setIsApplying(false);
+  };
+
+  const handleApplyCriteria = async () => {
+    if (!editingTask || !aiSuggestions || isApplying) return;
+    setIsApplying(true);
+    setAiError(null);
+    setAiSuccess(null);
+
+    const res = await applyAcceptanceCriteria(editingTask.id, aiSuggestions.acceptanceCriteria);
+    if (res.error) {
+      setAiError(res.error);
+    } else if (res.success) {
+      setAiSuccess("Acceptance criteria appended to task description successfully!");
+      
+      let checklistMarkdown = "\n\n### Acceptance Criteria\n";
+      aiSuggestions.acceptanceCriteria.forEach((item: string) => {
+        checklistMarkdown += `- [ ] ${item}\n`;
+      });
+      const updatedDesc = (editingTask.description || "").trim() + checklistMarkdown;
+      setEditingTask({ ...editingTask, description: updatedDesc });
+    }
+    setIsApplying(false);
+  };
+
+  const handleCreateSubtasks = async () => {
+    if (!editingTask || !aiSuggestions || isApplying) return;
+    setIsApplying(true);
+    setAiError(null);
+    setAiSuccess(null);
+
+    const res = await addSuggestedSubtasks(editingTask.id, aiSuggestions.subtasks);
+    if (res.error) {
+      setAiError(res.error);
+    } else if (res.success) {
+      setAiSuccess(`Created ${aiSuggestions.subtasks.length} subtasks successfully!`);
+    }
+    setIsApplying(false);
+  };
+
+  const handleApplyAll = async () => {
+    if (!editingTask || !aiSuggestions || isApplying) return;
+    setIsApplying(true);
+    setAiError(null);
+    setAiSuccess(null);
+
+    const descRes = await applyTaskDescription(editingTask.id, aiSuggestions.improvedDescription);
+    if (descRes.error) {
+      setAiError(descRes.error);
+      setIsApplying(false);
+      return;
+    }
+
+    const criteriaRes = await applyAcceptanceCriteria(editingTask.id, aiSuggestions.acceptanceCriteria);
+    if (criteriaRes.error) {
+      setAiError(criteriaRes.error);
+      setIsApplying(false);
+      return;
+    }
+
+    const subRes = await addSuggestedSubtasks(editingTask.id, aiSuggestions.subtasks);
+    if (subRes.error) {
+      setAiError(subRes.error);
+      setIsApplying(false);
+      return;
+    }
+
+    setAiSuccess("AI Suggestions fully applied successfully!");
+    
+    let checklistMarkdown = "\n\n### Acceptance Criteria\n";
+    aiSuggestions.acceptanceCriteria.forEach((item: string) => {
+      checklistMarkdown += `- [ ] ${item}\n`;
+    });
+    const updatedDesc = aiSuggestions.improvedDescription + checklistMarkdown;
+    setEditingTask({ ...editingTask, description: updatedDesc });
+    
+    setIsApplying(false);
+  };
 
   // Optimistic Tasks State
   const [localTasks, setLocalTasks] = React.useState<Task[]>(tasks);
@@ -608,127 +734,337 @@ export function TaskTab({ projectId, tasks, milestones }: TaskTabProps) {
 
       {/* Edit Modal */}
       {editingTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-md p-6 rounded-xl border border-border shadow-2xl relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-card w-full max-w-4xl p-6 rounded-xl border border-border shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground z-10"
               onClick={() => setEditingTask(null)}
               disabled={isEditPending}
             >
               <X className="h-4 w-4" />
             </Button>
 
-            <h3 className="text-lg font-bold text-foreground mb-1">Edit Task</h3>
-            <p className="text-xs text-muted-foreground mb-5">Update task title, details or status.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Left Column: Form Edit Fields */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">Edit Task</h3>
+                  <p className="text-xs text-muted-foreground">Update task title, details or status.</p>
+                </div>
 
-            <form action={editAction} className="space-y-4">
-              <div className="space-y-1">
-                <label htmlFor="title" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Task Title
-                </label>
-                <input
-                  id="title"
-                  name="title"
-                  type="text"
-                  required
-                  defaultValue={editingTask.title}
-                  disabled={isEditPending}
-                  className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
+                <form action={editAction} className="space-y-4">
+                  <div className="space-y-1">
+                    <label htmlFor="title" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Task Title
+                    </label>
+                    <input
+                      id="title"
+                      name="title"
+                      type="text"
+                      required
+                      defaultValue={editingTask.title}
+                      disabled={isEditPending}
+                      className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="description" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Description
+                    </label>
+                    <textarea
+                      id="description"
+                      name="description"
+                      rows={4}
+                      key={editingTask.id + "-" + (editingTask.description || "")}
+                      defaultValue={editingTask.description || ""}
+                      disabled={isEditPending}
+                      className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label htmlFor="status" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Status
+                      </label>
+                      <select
+                        id="status"
+                        name="status"
+                        defaultValue={editingTask.status}
+                        disabled={isEditPending}
+                        className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <option value="TODO">To Do</option>
+                        <option value="IN_PROGRESS">In Progress</option>
+                        <option value="DONE">Done</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label htmlFor="priority" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Priority
+                      </label>
+                      <select
+                        id="priority"
+                        name="priority"
+                        defaultValue={editingTask.priority}
+                        disabled={isEditPending}
+                        className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <option value="LOW">LOW</option>
+                        <option value="MEDIUM">MEDIUM</option>
+                        <option value="HIGH">HIGH</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="milestoneId" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Assign Milestone
+                    </label>
+                    <select
+                      id="milestoneId"
+                      name="milestoneId"
+                      defaultValue={editingTask.milestoneId || ""}
+                      disabled={isEditPending}
+                      className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <option value="">Unassigned</option>
+                      {milestones.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {editState?.error && (
+                    <div className="p-3 text-xs bg-destructive/10 border border-destructive/20 text-destructive rounded-lg font-medium">
+                      {editState.error}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setEditingTask(null)}
+                      disabled={isEditPending}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={isEditPending}>
+                      {isEditPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </div>
+                </form>
               </div>
 
-              <div className="space-y-1">
-                <label htmlFor="description" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Description
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  rows={2}
-                  defaultValue={editingTask.description || ""}
-                  disabled={isEditPending}
-                  className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              {/* Right Column: AI Task Assistant */}
+              <div className="border-t md:border-t-0 md:border-l border-border/60 pt-6 md:pt-0 md:pl-8 space-y-4">
                 <div className="space-y-1">
-                  <label htmlFor="status" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Status
-                  </label>
-                  <select
-                    id="status"
-                    name="status"
-                    defaultValue={editingTask.status}
-                    disabled={isEditPending}
-                    className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="TODO">To Do</option>
-                    <option value="IN_PROGRESS">In Progress</option>
-                    <option value="DONE">Done</option>
-                  </select>
+                  <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-primary animate-pulse" /> AI Task Assistant
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">
+                    Get suggestions for task enhancements, subtasks, criteria and edge cases.
+                  </p>
                 </div>
 
-                <div className="space-y-1">
-                  <label htmlFor="priority" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Priority
-                  </label>
-                  <select
-                    id="priority"
-                    name="priority"
-                    defaultValue={editingTask.priority}
-                    disabled={isEditPending}
-                    className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="LOW">LOW</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HIGH">HIGH</option>
-                  </select>
-                </div>
-              </div>
+                {/* AI Loading State */}
+                {isAiLoading && (
+                  <div className="p-8 border border-border/40 rounded-xl bg-muted/10 flex flex-col items-center justify-center text-center gap-3">
+                    <RefreshCw className="h-6 w-6 text-primary animate-spin" />
+                    <p className="text-xs font-medium text-foreground">Analyzing task details...</p>
+                    <p className="text-[10px] text-muted-foreground/60">Fetching structured advice from Gemini 3.6 Flash</p>
+                  </div>
+                )}
 
-              <div className="space-y-1">
-                <label htmlFor="milestoneId" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Assign Milestone
-                </label>
-                <select
-                  id="milestoneId"
-                  name="milestoneId"
-                  defaultValue={editingTask.milestoneId || ""}
-                  disabled={isEditPending}
-                  className="w-full px-3 py-2 bg-background/50 border border-input rounded-lg text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Unassigned</option>
-                  {milestones.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                {/* AI Error Log */}
+                {aiError && (
+                  <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl font-medium flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{aiError}</span>
+                  </div>
+                )}
 
-              {editState?.error && (
-                <div className="p-3 text-xs bg-destructive/10 border border-destructive/20 text-destructive rounded-lg font-medium">
-                  {editState.error}
-                </div>
-              )}
+                {/* AI Success Banner */}
+                {aiSuccess && (
+                  <div className="p-4 bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400 text-xs rounded-xl font-medium flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{aiSuccess}</span>
+                  </div>
+                )}
 
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setEditingTask(null)}
-                  disabled={isEditPending}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isEditPending}>
-                  {isEditPending ? "Saving..." : "Save Changes"}
-                </Button>
+                {/* Empty State before generation */}
+                {!aiSuggestions && !isAiLoading && (
+                  <div className="p-6 border border-dashed border-border/60 rounded-xl bg-card/20 flex flex-col items-center justify-center text-center gap-4">
+                    <Brain className="h-8 w-8 text-muted-foreground/60" />
+                    <div className="space-y-1 max-w-[240px]">
+                      <p className="text-xs font-semibold text-foreground">Need context enhancement?</p>
+                      <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                        Submit this task description to Gemini to break down subtasks and identify technical constraints.
+                      </p>
+                    </div>
+                    <Button 
+                      type="button" 
+                      onClick={handleAiAnalyze}
+                      className="text-xs h-8 gap-1.5 cursor-pointer font-medium"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" /> Enhance Task with AI
+                    </Button>
+                  </div>
+                )}
+
+                {/* Suggestions display preview panel */}
+                {aiSuggestions && !isAiLoading && (
+                  <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-1">
+                    {/* Header CTAs */}
+                    <div className="flex items-center justify-between gap-3 bg-muted/40 p-2.5 rounded-lg border border-border/30">
+                      <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                        AI Suggestions
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setAiSuggestions(null)} 
+                          className="h-7 text-[10px] cursor-pointer"
+                        >
+                          Discard
+                        </Button>
+                        <Button 
+                          type="button" 
+                          size="sm" 
+                          disabled={isApplying}
+                          onClick={handleApplyAll} 
+                          className="h-7 text-[10px] gap-1 cursor-pointer font-semibold"
+                        >
+                          {isApplying ? "Applying..." : "Apply All"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Refined Description suggestion */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Improved Description
+                        </span>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          disabled={isApplying}
+                          onClick={handleApplyDescription}
+                          className="h-6 text-[9px] px-2 cursor-pointer"
+                        >
+                          Apply Description
+                        </Button>
+                      </div>
+                      <div className="p-3 bg-background/50 border border-border/40 rounded-lg text-xs leading-relaxed text-foreground whitespace-pre-wrap font-mono">
+                        {aiSuggestions.improvedDescription}
+                      </div>
+                    </div>
+
+                    {/* Acceptance Criteria suggestion */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Acceptance Criteria
+                        </span>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          disabled={isApplying}
+                          onClick={handleApplyCriteria}
+                          className="h-6 text-[9px] px-2 cursor-pointer"
+                        >
+                          Append Criteria
+                        </Button>
+                      </div>
+                      <ul className="space-y-1.5 pl-1.5">
+                        {aiSuggestions.acceptanceCriteria.map((item: string, idx: number) => (
+                          <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                            <span className="text-primary mt-0.5">☐</span>
+                            <span className="leading-tight">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Subtasks suggestions */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Suggested Subtasks
+                        </span>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          disabled={isApplying}
+                          onClick={handleCreateSubtasks}
+                          className="h-6 text-[9px] px-2 cursor-pointer"
+                        >
+                          Create Subtasks
+                        </Button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {aiSuggestions.subtasks.map((sub: { title: string; description: string | null }, idx: number) => (
+                          <div key={idx} className="p-2 bg-background/40 border border-border/30 rounded-lg space-y-0.5">
+                            <p className="text-xs font-semibold text-foreground flex items-center gap-1">
+                              <ChevronRight className="h-3.5 w-3.5 text-primary shrink-0" />
+                              {sub.title}
+                            </p>
+                            {sub.description && (
+                              <p className="text-[10px] text-muted-foreground/80 pl-4.5">
+                                {sub.description}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Technical Considerations suggestions */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block">
+                        Technical Considerations
+                      </span>
+                      <ul className="space-y-1.5 pl-1.5">
+                        {aiSuggestions.technicalConsiderations.map((item: string, idx: number) => (
+                          <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                            <span className="text-primary mt-0.5">→</span>
+                            <span className="leading-tight">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Edge Cases suggestions */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block">
+                        Edge Cases
+                      </span>
+                      <ul className="space-y-1.5 pl-1.5">
+                        {aiSuggestions.edgeCases.map((item: string, idx: number) => (
+                          <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                            <span className="text-destructive mt-0.5">⚠</span>
+                            <span className="leading-tight">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
