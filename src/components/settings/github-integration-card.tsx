@@ -105,16 +105,15 @@ export function GithubIntegrationCard({ username }: GithubIntegrationCardProps) 
             <p className="text-xs text-muted-foreground max-w-md">
               No account connected. Connect your account to enable issues and repository mapping features.
             </p>
-            <Link
+            <a
               href="/api/auth/github/login"
-              prefetch={false}
               className={cn(
                 buttonVariants({ size: "sm" }),
                 "gap-1.5 cursor-pointer text-xs"
               )}
             >
               <Link2 className="h-3.5 w-3.5" /> Connect GitHub
-            </Link>
+            </a>
           </>
         )}
       </div>
