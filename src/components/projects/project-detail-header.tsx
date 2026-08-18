@@ -79,7 +79,7 @@ export function ProjectDetailHeader({ project }: ProjectDetailHeaderProps) {
             <span className="flex items-center gap-1">
               <Calendar className="h-3.5 w-3.5" />
               Created on{" "}
-              {new Date(project.createdAt).toLocaleDateString(undefined, {
+              {new Date(project.createdAt).toLocaleDateString("en-US", {
                 year: "numeric",
                 month: "short",
                 day: "numeric",
@@ -87,7 +87,7 @@ export function ProjectDetailHeader({ project }: ProjectDetailHeaderProps) {
             </span>
             <span>
               Updated on{" "}
-              {new Date(project.updatedAt).toLocaleDateString(undefined, {
+              {new Date(project.updatedAt).toLocaleDateString("en-US", {
                 year: "numeric",
                 month: "short",
                 day: "numeric",
