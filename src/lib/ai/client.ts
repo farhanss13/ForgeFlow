@@ -23,7 +23,7 @@ export async function generateProjectPlan(requirements: string): Promise<Generat
     throw new Error("GEMINI_API_KEY is not configured in the server environment variables.");
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
   const schema = {
     type: "OBJECT",
@@ -80,6 +80,9 @@ Focus on technical requirements, setup tasks, design workflows, and concrete cod
     }
   };
 
+  console.log("URL called:", url);
+  console.log("Payload sent:", JSON.stringify(payload, null, 2));
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -88,17 +91,20 @@ Focus on technical requirements, setup tasks, design workflows, and concrete cod
     body: JSON.stringify(payload)
   });
 
+  console.log("Response status:", response.status, response.statusText);
+
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("Gemini API error:", errorText);
-    throw new Error("AI provider failed to generate the plan. Please check your prompt and API status.");
+    console.error("Gemini API error body:", errorText);
+    throw new Error(`AI provider failed to generate the plan (Status ${response.status}). Error: ${errorText}`);
   }
 
   const data = await response.json();
+  console.log("Gemini API success response payload:", JSON.stringify(data, null, 2));
   const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!rawText) {
-    throw new Error("Invalid response received from AI model.");
+    throw new Error("Invalid response received from AI model. Candidates or text block is missing.");
   }
 
   // Parse and validate structured output
