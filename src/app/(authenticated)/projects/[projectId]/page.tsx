@@ -107,6 +107,12 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           >
             Tasks ({project._count.tasks})
           </Link>
+          <Link
+            href={`/projects/${projectId}/documents`}
+            className="py-4 px-1 border-b-2 border-transparent font-medium text-sm text-muted-foreground hover:text-foreground transition-all"
+          >
+            Wiki / Docs
+          </Link>
         </nav>
       </div>
 
