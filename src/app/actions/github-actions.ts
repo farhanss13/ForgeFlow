@@ -6,7 +6,9 @@ import { getCurrentUser, verifyProjectOwnership } from "@/lib/auth-helpers";
 import { 
   fetchGitHubRepositories, 
   verifyRepositoryAccess, 
-  type GitHubRepositoryDTO 
+  fetchGitHubRepositoryDetails,
+  type GitHubRepositoryDTO,
+  type GitHubRepositoryDetails
 } from "@/lib/github/client";
 
 /**
@@ -129,3 +131,47 @@ export async function disconnectRepository(
     return { error: errorMsg, success: false };
   }
 }
+
+/**
+ * Retrieves detailed live statistics and information for the repository connected to a project.
+ */
+export async function getGitHubRepositoryDetails(
+  projectId: string
+): Promise<{
+  details: GitHubRepositoryDetails | null;
+  error: string | null;
+}> {
+  try {
+    // 1. Authenticate user
+    const user = await getCurrentUser();
+    if (!user) {
+      return { details: null, error: "Unauthorized access." };
+    }
+
+    // 2. Verify project ownership
+    await verifyProjectOwnership(projectId);
+
+    // 3. Find connected repository details
+    const linkedRepo = await prisma.gitHubRepository.findUnique({
+      where: { projectId },
+    });
+
+    if (!linkedRepo) {
+      return { details: null, error: "No GitHub repository connected." };
+    }
+
+    // 4. Retrieve live stats from GitHub using client helper
+    const details = await fetchGitHubRepositoryDetails(
+      user.id,
+      linkedRepo.ownerLogin,
+      linkedRepo.name
+    );
+
+    return { details, error: null };
+  } catch (error) {
+    console.error("Failed to fetch GitHub repository details:", error);
+    const errorMsg = error instanceof Error ? error.message : "Unable to retrieve repository information right now. Please try again.";
+    return { details: null, error: errorMsg };
+  }
+}
+

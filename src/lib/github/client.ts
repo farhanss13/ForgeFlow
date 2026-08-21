@@ -109,3 +109,78 @@ export async function verifyRepositoryAccess(
     isPrivate: repo.private,
   };
 }
+
+export interface GitHubRepositoryDetails {
+  id: string;
+  name: string;
+  fullName: string;
+  ownerLogin: string;
+  htmlUrl: string;
+  description: string | null;
+  defaultBranch: string;
+  visibility: string;
+  isFork: boolean;
+  stars: number;
+  forks: number;
+  openIssues: number;
+  language: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Fetches current repository statistics and details from GitHub API.
+ */
+export async function fetchGitHubRepositoryDetails(
+  userId: string,
+  owner: string,
+  repoName: string
+): Promise<GitHubRepositoryDetails> {
+  const token = await getGithubToken(userId);
+
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "ForgeFlow-App",
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("GitHub connection needs to be renewed.");
+    }
+    if (response.status === 403) {
+      const rateLimitRemaining = response.headers.get("x-ratelimit-remaining");
+      if (rateLimitRemaining === "0") {
+        throw new Error("GitHub API rate limit reached. Please try again later.");
+      }
+      throw new Error("GitHub API access forbidden or permission denied.");
+    }
+    if (response.status === 404) {
+      throw new Error("This repository is no longer available.");
+    }
+    throw new Error("Unable to retrieve repository information right now. Please try again.");
+  }
+
+  const repo = await response.json();
+
+  return {
+    id: repo.id.toString(),
+    name: repo.name,
+    fullName: repo.full_name,
+    ownerLogin: repo.owner?.login || "",
+    htmlUrl: repo.html_url,
+    description: repo.description || null,
+    defaultBranch: repo.default_branch || "main",
+    visibility: repo.private ? "Private" : "Public",
+    isFork: !!repo.fork,
+    stars: repo.stargazers_count || 0,
+    forks: repo.forks_count || 0,
+    openIssues: repo.open_issues_count || 0,
+    language: repo.language || null,
+    createdAt: repo.created_at,
+    updatedAt: repo.updated_at,
+  };
+}
+
