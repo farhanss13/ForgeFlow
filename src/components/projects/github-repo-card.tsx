@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { disconnectRepository, getGitHubRepositoryDetails } from "@/app/actions/github-actions";
 import { type GitHubRepositoryDetails } from "@/lib/github/client";
 import { GithubRepoSelector } from "./github-repo-selector";
+import { GithubIssueSelector } from "./github-issue-selector";
 
 interface GitHubRepository {
   id: string;
@@ -24,6 +25,7 @@ interface GithubRepoCardProps {
 
 export function GithubRepoCard({ projectId, connectedRepo }: GithubRepoCardProps) {
   const [isSelectorOpen, setIsSelectorOpen] = React.useState(false);
+  const [isIssueSelectorOpen, setIsIssueSelectorOpen] = React.useState(false);
   const [isPending, setIsPending] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
@@ -233,12 +235,22 @@ export function GithubRepoCard({ projectId, connectedRepo }: GithubRepoCardProps
             >
               <ExternalLink className="h-3.5 w-3.5" /> Open on GitHub
             </a>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsIssueSelectorOpen(true)}
+              className="gap-1.5 cursor-pointer text-xs h-8"
+            >
+              <Info className="h-3.5 w-3.5" /> Import Issues
+            </Button>
+
             <Button
               variant="destructive"
               size="sm"
               disabled={isPending}
               onClick={handleDisconnect}
-              className="gap-1.5 cursor-pointer text-xs"
+              className="gap-1.5 cursor-pointer text-xs h-8"
             >
               {isPending ? (
                 <>
@@ -280,6 +292,13 @@ export function GithubRepoCard({ projectId, connectedRepo }: GithubRepoCardProps
           setErrorMsg(null);
           loadDetails();
         }}
+      />
+
+      {/* Issues selector dialog */}
+      <GithubIssueSelector
+        projectId={projectId}
+        isOpen={isIssueSelectorOpen}
+        onClose={() => setIsIssueSelectorOpen(false)}
       />
     </div>
   );

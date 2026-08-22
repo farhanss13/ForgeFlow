@@ -55,22 +55,29 @@ model Milestone {
 
 // Kanban Task card model
 model Task {
-  id          String     @id @default(uuid()) @db.Uuid
-  projectId   String     @db.Uuid
-  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  milestoneId String?    @db.Uuid
-  milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
-  title       String
-  description String?
-  status      String     @default("TODO")      // e.g. "TODO", "IN_PROGRESS", "DONE"
-  priority    String     @default("MEDIUM")    // e.g. "LOW", "MEDIUM", "HIGH"
-  position    Float      // Ordering index for drag and drop
-  dueDate     DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id                String     @id @default(uuid()) @db.Uuid
+  projectId         String     @db.Uuid
+  project           Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestoneId       String?    @db.Uuid
+  milestone         Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  title             String
+  description       String?
+  status            String     @default("TODO")      // e.g. "TODO", "IN_PROGRESS", "DONE"
+  priority          String     @default("MEDIUM")    // e.g. "LOW", "MEDIUM", "HIGH"
+  position          Float      // Ordering index for drag and drop
+  dueDate           DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // GitHub integration fields
+  githubIssueId     String?
+  githubIssueNumber Int?
+  githubIssueUrl    String?
+  githubIssueTitle  String?
 
   @@index([projectId])
   @@index([projectId, status])
+  @@unique([projectId, githubIssueId])
 }
 
 // Technical documentation model

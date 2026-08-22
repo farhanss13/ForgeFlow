@@ -7,8 +7,11 @@ import {
   fetchGitHubRepositories, 
   verifyRepositoryAccess, 
   fetchGitHubRepositoryDetails,
+  fetchGitHubIssues,
+  fetchSingleGitHubIssue,
   type GitHubRepositoryDTO,
-  type GitHubRepositoryDetails
+  type GitHubRepositoryDetails,
+  type GitHubIssueDTO
 } from "@/lib/github/client";
 
 /**
@@ -174,4 +177,156 @@ export async function getGitHubRepositoryDetails(
     return { details: null, error: errorMsg };
   }
 }
+
+/**
+ * Retrieves paginated issues from the project's connected repository.
+ * Derives repository target exclusively from database to prevent parameter spoofing.
+ */
+export async function getGitHubIssues(
+  projectId: string,
+  page: number = 1,
+  state: "open" | "closed" | "all" = "all"
+): Promise<{
+  issues: GitHubIssueDTO[];
+  error: string | null;
+}> {
+  try {
+    // 1. Authenticate user
+    const user = await getCurrentUser();
+    if (!user) {
+      return { issues: [], error: "Unauthorized access." };
+    }
+
+    // 2. Verify project ownership
+    await verifyProjectOwnership(projectId);
+
+    // 3. Find connected repository details
+    const linkedRepo = await prisma.gitHubRepository.findUnique({
+      where: { projectId },
+    });
+
+    if (!linkedRepo) {
+      return { issues: [], error: "No GitHub repository connected." };
+    }
+
+    // 4. Retrieve paginated list from GitHub API
+    const issues = await fetchGitHubIssues(
+      user.id,
+      linkedRepo.ownerLogin,
+      linkedRepo.name,
+      page,
+      state
+    );
+
+    // 5. Cross-reference existing imported issues in the database
+    const issueIds = issues.map((i) => i.id);
+    const existingImports = await prisma.task.findMany({
+      where: {
+        projectId,
+        githubIssueId: { in: issueIds },
+      },
+      select: { githubIssueId: true },
+    });
+
+    const importedIds = new Set(existingImports.map((t) => t.githubIssueId));
+
+    const mappedIssues = issues.map((i) => ({
+      ...i,
+      alreadyImported: importedIds.has(i.id),
+    }));
+
+    return { issues: mappedIssues, error: null };
+  } catch (error) {
+    console.error("Failed to fetch GitHub issues:", error);
+    const errorMsg = error instanceof Error ? error.message : "Unable to retrieve issues right now.";
+    return { issues: [], error: errorMsg };
+  }
+}
+
+/**
+ * Imports a selected GitHub Issue into the project workspace Kanban board as a TODO Task.
+ */
+export async function importGitHubIssue(
+  projectId: string,
+  issueNumber: number
+): Promise<{
+  success: boolean;
+  alreadyImported: boolean;
+  error: string | null;
+}> {
+  try {
+    // 1. Authenticate user
+    const user = await getCurrentUser();
+    if (!user) {
+      return { success: false, alreadyImported: false, error: "Unauthorized access." };
+    }
+
+    // 2. Verify project ownership
+    await verifyProjectOwnership(projectId);
+
+    // 3. Find connected repository details
+    const linkedRepo = await prisma.gitHubRepository.findUnique({
+      where: { projectId },
+    });
+
+    if (!linkedRepo) {
+      return { success: false, alreadyImported: false, error: "No GitHub repository connected." };
+    }
+
+    // 4. Fetch live issue details from GitHub to verify it exists and is not a PR
+    const issue = await fetchSingleGitHubIssue(
+      user.id,
+      linkedRepo.ownerLogin,
+      linkedRepo.name,
+      issueNumber
+    );
+
+    // 5. Duplicate check: verify if it is already imported into this project
+    const existing = await prisma.task.findFirst({
+      where: {
+        projectId,
+        githubIssueId: issue.id,
+      },
+    });
+
+    if (existing) {
+      return { success: true, alreadyImported: true, error: null };
+    }
+
+    // 6. Calculate position: append at the end of the TODO column
+    const lastTodo = await prisma.task.findFirst({
+      where: {
+        projectId,
+        status: "TODO",
+      },
+      orderBy: { position: "desc" },
+    });
+
+    const position = lastTodo ? lastTodo.position + 1000 : 1000;
+
+    // 7. Create Task database row mapping
+    await prisma.task.create({
+      data: {
+        projectId,
+        title: issue.title,
+        description: `Imported from GitHub Issue #${issue.number}\n\n${issue.body || ""}`,
+        status: "TODO",
+        priority: "MEDIUM",
+        position,
+        githubIssueId: issue.id,
+        githubIssueNumber: issue.number,
+        githubIssueUrl: issue.htmlUrl,
+        githubIssueTitle: issue.title,
+      },
+    });
+
+    revalidatePath(`/projects/${projectId}`);
+    return { success: true, alreadyImported: false, error: null };
+  } catch (error) {
+    console.error("Failed to import GitHub issue:", error);
+    const errorMsg = error instanceof Error ? error.message : "GitHub issue import failed.";
+    return { success: false, alreadyImported: false, error: errorMsg };
+  }
+}
+
 
