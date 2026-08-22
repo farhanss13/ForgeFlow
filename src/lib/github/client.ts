@@ -307,4 +307,80 @@ export async function fetchSingleGitHubIssue(
   };
 }
 
+export interface GitHubPullRequestDTO {
+  id: string;
+  number: number;
+  title: string;
+  body: string | null;
+  state: "open" | "closed";
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  mergedAt: string | null;
+  userLogin: string;
+  labels: string[];
+  draft: boolean;
+  headBranch: string;
+  baseBranch: string;
+}
+
+/**
+ * Fetches paginated Pull Requests from the connected GitHub repository.
+ */
+export async function fetchGitHubPullRequests(
+  userId: string,
+  owner: string,
+  repo: string,
+  page: number = 1,
+  state: "open" | "closed" | "all" = "all"
+): Promise<GitHubPullRequestDTO[]> {
+  const token = await getGithubToken(userId);
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls?per_page=30&page=${page}&state=${state}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "ForgeFlow-App",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("GitHub connection needs to be renewed.");
+    }
+    throw new Error(`GitHub API returned error status ${response.status}`);
+  }
+
+  const items = await response.json();
+
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return items.map((item: any) => ({
+    id: item.id.toString(),
+    number: item.number,
+    title: item.title,
+    body: item.body || null,
+    state: item.state,
+    htmlUrl: item.html_url,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+    closedAt: item.closed_at || null,
+    mergedAt: item.merged_at || null,
+    userLogin: item.user?.login || "unknown",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    labels: Array.isArray(item.labels) ? item.labels.map((l: any) => l.name) : [],
+    draft: !!item.draft,
+    headBranch: item.head?.ref || "unknown",
+    baseBranch: item.base?.ref || "unknown",
+  }));
+}
+
+
 

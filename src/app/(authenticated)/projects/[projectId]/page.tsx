@@ -8,6 +8,7 @@ import { MilestoneTab } from "@/components/projects/milestone-tab";
 import { TaskTab } from "@/components/projects/task-tab";
 import { AiPlannerTab } from "@/components/projects/ai-planner-tab";
 import { GithubRepoCard } from "@/components/projects/github-repo-card";
+import { PullRequestsTab } from "@/components/projects/pull-requests-tab";
 
 interface PageProps {
   params: Promise<{ projectId: string }>;
@@ -132,6 +133,17 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             AI Planner
           </Link>
           <Link
+            href={`/projects/${projectId}?tab=pull-requests`}
+            replace
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+              tab === "pull-requests"
+                ? "border-primary text-foreground font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Pull Requests
+          </Link>
+          <Link
             href={`/projects/${projectId}/documents`}
             className="py-4 px-1 border-b-2 border-transparent font-medium text-sm text-muted-foreground hover:text-foreground transition-all"
           >
@@ -210,6 +222,10 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
         {tab === "ai-planner" && (
           <AiPlannerTab projectId={projectId} />
+        )}
+        
+        {tab === "pull-requests" && (
+          <PullRequestsTab projectId={projectId} />
         )}
       </div>
     </div>

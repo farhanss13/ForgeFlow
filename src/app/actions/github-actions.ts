@@ -9,9 +9,11 @@ import {
   fetchGitHubRepositoryDetails,
   fetchGitHubIssues,
   fetchSingleGitHubIssue,
+  fetchGitHubPullRequests,
   type GitHubRepositoryDTO,
   type GitHubRepositoryDetails,
-  type GitHubIssueDTO
+  type GitHubIssueDTO,
+  type GitHubPullRequestDTO
 } from "@/lib/github/client";
 
 /**
@@ -328,5 +330,53 @@ export async function importGitHubIssue(
     return { success: false, alreadyImported: false, error: errorMsg };
   }
 }
+
+/**
+ * Retrieves paginated Pull Requests from the project's connected repository.
+ */
+export async function getGitHubPullRequests(
+  projectId: string,
+  page: number = 1,
+  state: "open" | "closed" | "all" = "all"
+): Promise<{
+  pullRequests: GitHubPullRequestDTO[];
+  error: string | null;
+}> {
+  try {
+    // 1. Authenticate user
+    const user = await getCurrentUser();
+    if (!user) {
+      return { pullRequests: [], error: "Unauthorized access." };
+    }
+
+    // 2. Verify project ownership
+    await verifyProjectOwnership(projectId);
+
+    // 3. Find connected repository details
+    const linkedRepo = await prisma.gitHubRepository.findUnique({
+      where: { projectId },
+    });
+
+    if (!linkedRepo) {
+      return { pullRequests: [], error: "No GitHub repository connected." };
+    }
+
+    // 4. Retrieve paginated pulls list from GitHub API
+    const pullRequests = await fetchGitHubPullRequests(
+      user.id,
+      linkedRepo.ownerLogin,
+      linkedRepo.name,
+      page,
+      state
+    );
+
+    return { pullRequests, error: null };
+  } catch (error) {
+    console.error("Failed to fetch GitHub pull requests:", error);
+    const errorMsg = error instanceof Error ? error.message : "Unable to retrieve Pull Requests right now.";
+    return { pullRequests: [], error: errorMsg };
+  }
+}
+
 
 
